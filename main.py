@@ -116,7 +116,7 @@ def filter_by_rating():
     else:
         print("No games found above that rating.")
 
-# Example usage:
+#Example usage (will change after integrating GUI):
 if __name__ == "__main__":
     while True:
         print("\nVideo Game Database")
