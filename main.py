@@ -1,155 +1,164 @@
-### game_app.py
+import sys
 import sqlite3
+from PyQt5.QtWidgets import *
+from PyQt5.uic import loadUi
+import matplotlib.pyplot as plt
 
+# create database
 conn = sqlite3.connect("games.db")
 cursor = conn.cursor()
 
-def show_all_games():
-    cursor.execute("SELECT title, genre, release_year, publisher, rating FROM games LIMIT 10")
-    games = cursor.fetchall()
+# make table if it doesn't exist
+cursor.execute("""
+    CREATE TABLE IF NOT EXISTS games (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT,
+        genre TEXT,
+        release_year INTEGER,
+        publisher TEXT,
+        rating REAL
+    )
+""")
+conn.commit()
 
-    print("\nAll Games:")
-    for game in games:
-        title = game[0] or "Unknown Title"
-        genre = game[1] or "Unknown Genre"
-        year = game[2] or "Unknown Year"
-        publisher = game[3] or "Unknown Publisher"
-        rating = game[4] or "Unknown Rating"
+class GameApp(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        #load every widget from qt designer file
+        loadUi("FinalProjectGui.ui", self)
+        
+        #connect buttons
+        self.addButton.clicked.connect(self.add_game)
+        self.deleteButton.clicked.connect(self.delete_game)
+        self.updateButton.clicked.connect(self.update_game)
+        self.searchInput.returnPressed.connect(self.search_game)
+        self.applyFilters.clicked.connect(self.apply_filters)
+        self.showChart.clicked.connect(self.show_stats)
 
-        print("Title:", title)
-        print("Genre:", genre)
-        print("Release Year:", year)
-        print("Publisher:", publisher)
-        print("Rating:", rating)
-        print("------")
+        #show all games when program starts
+        self.show_all_games()
 
-def search_by_title():
-    keyword = input("Enter part of the title: ")
-    cursor.execute("SELECT * FROM games WHERE title LIKE ?", ('%' + keyword + '%',))
-    results = cursor.fetchall()
-
-    if results:
-        for game in results:
-            print(game)
-    else:
-        print("No game found with that title.")
-
-def add_game():
-    print("\nEnter new game details:")
-    title = input("Title: ")
-    genre = input("Genre: ")
-    year = input("Release Year: ")
-    publisher = input("Publisher: ")
-    rating = input("Rating (e.g. 8.5): ")
-
-    if not year.isdigit() or not rating.replace('.', '', 1).isdigit():
-        print("Please enter valid numbers for year and rating.")
-        return
-
-    cursor.execute("""
-        INSERT INTO games (title, genre, release_year, publisher, rating)
-        VALUES (?, ?, ?, ?, ?)""", (title, genre, int(year), publisher, float(rating)))
-    conn.commit()
-    print("Game added successfully.")
-
-def delete_game():
-    title = input("Enter the title of the game to delete: ")
-    cursor.execute("SELECT * FROM games WHERE title = ?", (title,))
-    result = cursor.fetchone()
-
-    if result:
+    #pop-up message
+    def show_message(self, message):
+        msg = QMessageBox()
+        msg.setText(message)
+        msg.exec_()
+    
+    def show_all_games(self):
+        cursor.execute("SELECT title, genre, release_year, publisher, rating FROM games")
+        games = cursor.fetchall()
+        
+        self.tableWidget.setRowCount(0)     #clears old rows
+        for i, game in enumerate(games):
+            self.tableWidget.insertRow(i)
+            for j, data in enumerate(game):
+                self.tableWidget.setItem(i, j, QTableWidgetItem(str(data)))
+    
+    def add_game(self):
+        title = self.titleInput.text()
+        if title == "":
+            self.show_message("Please enter a title!")
+            return
+        
+        genre = self.genreInput.currentText()
+        year = self.yearInput.value()
+        publisher = self.publiserInput.text()
+        rating = self.ratingInput.value()
+        
+        cursor.execute("INSERT INTO games (title, genre, release_year, publisher, rating) VALUES (?,?,?,?,?)", 
+                      (title, genre, year, publisher, rating))
+        conn.commit()
+        
+        self.show_message("Game added!")
+        self.show_all_games()
+    
+    def delete_game(self):
+        title = self.titleInput.text()
+        if title == "":
+            self.show_message("Please enter a title to delete!")
+            return
+        
         cursor.execute("DELETE FROM games WHERE title = ?", (title,))
         conn.commit()
-        print("Game deleted successfully.")
-    else:
-        print("Game not found.")
+        
+        self.show_message("Game deleted!")
+        self.show_all_games()
+    
+    def update_game(self):
+        title = self.titleInput.text()
+        if title == "":
+            self.show_message("Please enter a title to update!")
+            return
+        
+        rating = self.ratingInput.value()
+        cursor.execute("UPDATE games SET rating = ? WHERE title = ?", (rating, title))
+        conn.commit()
+        
+        self.show_message("Rating updated!")
+        self.show_all_games()
+    
+    def search_game(self):
+        search_text = self.searchInput.text()
+        cursor.execute("SELECT title, genre, release_year, publisher, rating FROM games WHERE title LIKE ?", 
+                      ("%" + search_text + "%",))
+        games = cursor.fetchall()
+        
+        self.tableWidget.setRowCount(0)
+        for i, game in enumerate(games):
+            self.tableWidget.insertRow(i)
+            for j, data in enumerate(game):
+                self.tableWidget.setItem(i, j, QTableWidgetItem(str(data)))
+    
+    def apply_filters(self):
+        genre = self.filterGenre.currentText()
+        year = self.filterYear.value()
+        rating = self.filterRating.value()
+        
+        query = "SELECT title, genre, release_year, publisher, rating FROM games WHERE 1=1"
+        params = []
+        
+        if genre != "All":
+            query = query + " AND genre = ?"
+            params.append(genre)
+        
+        if year > 0:
+            query = query + " AND release_year = ?"
+            params.append(year)
+        
+        if rating > 0:
+            query = query + " AND rating >= ?"
+            params.append(rating)
+        
+        cursor.execute(query, params)
+        games = cursor.fetchall()
+        
+        self.tableWidget.setRowCount(0)
+        for i, game in enumerate(games):
+            self.tableWidget.insertRow(i)
+            for j, data in enumerate(game):
+                self.tableWidget.setItem(i, j, QTableWidgetItem(str(data)))
 
-def update_game():
-    title = input("Enter the title of the game to update: ")
-    cursor.execute("SELECT * FROM games WHERE title = ?", (title,))
-    result = cursor.fetchone()
+    def show_stats(self):
+        cursor.execute("SELECT genre, AVG(rating) FROM games GROUP BY genre")
+        data = cursor.fetchall()
 
-    if result:
-        new_rating = input("Enter new rating: ")
-        if new_rating.replace('.', '', 1).isdigit():
-            cursor.execute("UPDATE games SET rating = ? WHERE title = ?", (float(new_rating), title))
-            conn.commit()
-            print("Rating updated successfully.")
-        else:
-            print("Invalid rating value.")
-    else:
-        print("Game not found.")
+        if len(data) == 0:
+            self.show_message("No data!")
+            return
 
-def filter_by_year():
-    year = input("Enter release year: ")
-    if not year.isdigit():
-        print("Invalid year.")
-        return
-    cursor.execute("SELECT * FROM games WHERE release_year = ?", (int(year),))
-    results = cursor.fetchall()
-    if results:
-        for game in results:
-            print(game)
-    else:
-        print("No games found for that year.")
+        genres = []
+        ratings = []
+        for row in data:
+            genres.append(row[0])
+            ratings.append(row[1])
 
-def filter_by_genre():
-    genre = input("Enter genre: ")
-    cursor.execute("SELECT * FROM games WHERE genre = ?", (genre,))
-    results = cursor.fetchall()
-    if results:
-        for game in results:
-            print(game)
-    else:
-        print("No games found for that genre.")
+        plt.bar(genres, ratings)
+        plt.title("Average Rating by Genre")
+        plt.show()
 
-def filter_by_rating():
-    rating = input("Enter minimum rating: ")
-    if not rating.replace('.', '', 1).isdigit():
-        print("Invalid rating.")
-        return
-    cursor.execute("SELECT * FROM games WHERE rating >= ?", (float(rating),))
-    results = cursor.fetchall()
-    if results:
-        for game in results:
-            print(game)
-    else:
-        print("No games found above that rating.")
-
-#Example usage (will change after integrating GUI):
 if __name__ == "__main__":
-    while True:
-        print("\nVideo Game Database")
-        print("1. Show all games")
-        print("2. Search by title")
-        print("3. Add new game")
-        print("4. Delete a game")
-        print("5. Update game rating")
-        print("6. Filter by release year")
-        print("7. Filter by genre")
-        print("8. Filter by rating")
-        print("9. Exit")
-
-        choice = input("Choose an option: ")
-
-        if choice == '1':
-            show_all_games()
-        elif choice == '2':
-            search_by_title()
-        elif choice == '3':
-            add_game()
-        elif choice == '4':
-            delete_game()
-        elif choice == '5':
-            update_game()
-        elif choice == '6':
-            filter_by_year()
-        elif choice == '7':
-            filter_by_genre()
-        elif choice == '8':
-            filter_by_rating()
-        elif choice == '9':
-            print("Goodbye!")
-            break
-        else:
-            print("Invalid choice.")
+    app = QApplication(sys.argv)
+    window = GameApp()
+    window.setWindowTitle("Game Database")
+    window.show()
+    sys.exit(app.exec_())
